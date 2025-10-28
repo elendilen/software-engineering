@@ -1,0 +1,23 @@
+# Folders and files created by Android Studio and Gradle
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+/build/
+/captures/
+.cxx/
+
+# Log files
+*.log
+
+# Keystore files (NEVER commit these)
+*.jks
+*.keystore
+
+# Google Services (can contain sensitive info, optional to ignore)
+# google-services.json
+
+# Signed APKs
+*.apk
+*.aab
