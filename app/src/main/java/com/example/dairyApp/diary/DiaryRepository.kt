@@ -64,4 +64,9 @@ class DiaryRepository(private val diaryDao: DiaryDao) {
     fun getAllEvents(): Flow<List<DiaryEvent>> {
         return diaryDao.getAllEvents()
     }
+
+    // Return distinct page names (groupName) for a given eventId so the UI can present existing pages
+    fun getPagesForEvent(eventId: String): Flow<List<String>> {
+        return diaryDao.getPagesForEvent(eventId)
+    }
 }

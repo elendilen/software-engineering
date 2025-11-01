@@ -116,6 +116,11 @@ fun AppNavigation() {
                     nullable = true
                     defaultValue = null
                 },
+                navArgument(Screen.PhotoCaption.diaryPageNameArg) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
                 navArgument(Screen.PhotoCaption.entryIdArg) {
                     type = NavType.StringType
                     nullable = true
@@ -124,11 +129,14 @@ fun AppNavigation() {
             )
         ) { backStackEntry ->
             val eventId = backStackEntry.arguments?.getString(Screen.PhotoCaption.eventIdArg)
+            val diaryPageName = backStackEntry.arguments?.getString(Screen.PhotoCaption.diaryPageNameArg)
             val entryId = backStackEntry.arguments?.getString(Screen.PhotoCaption.entryIdArg)
             PhotoCaptionScreen(
                 navController = navController,
                 initialEventId = eventId,
-                entryIdToEdit = entryId
+                initialDiaryPageName = diaryPageName,
+                entryIdToEdit = entryId,
+                navBackStackEntry = backStackEntry
             )
         }
     }

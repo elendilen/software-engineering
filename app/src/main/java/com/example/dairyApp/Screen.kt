@@ -1,10 +1,11 @@
 package com.example.dairyApp
 
 sealed class Screen(val route: String) {
-    object PhotoCaption : Screen("photo_caption?eventId={eventId}&entryId={entryId}") {
-        fun createRoute(eventId: String? = null, entryId: String? = null): String {
+    object PhotoCaption : Screen("photo_caption?eventId={eventId}&diaryPageName={diaryPageName}&entryId={entryId}") {
+        fun createRoute(eventId: String? = null, diaryPageName: String? = null, entryId: String? = null): String {
             val parts = mutableListOf<String>()
             eventId?.let { parts.add("eventId=$it") }
+            diaryPageName?.let { parts.add("diaryPageName=${it}") }
             entryId?.let { parts.add("entryId=$it") }
             return if (parts.isEmpty()) {
                 "photo_caption"
@@ -13,6 +14,7 @@ sealed class Screen(val route: String) {
             }
         }
         const val eventIdArg = "eventId" // optional
+        const val diaryPageNameArg = "diaryPageName" // optional: when provided we add entry directly to this page
         const val entryIdArg = "entryId" // optional, for editing existing entry
     }
 

@@ -36,6 +36,9 @@ interface DiaryDao {
     @Query("SELECT * FROM diary_entries WHERE tripId = :eventId AND groupName = :pageName ORDER BY timestamp DESC")
     fun getEntriesForEventAndPage(eventId: String, pageName: String): Flow<List<DiaryEntry>>
 
+    @Query("SELECT DISTINCT groupName FROM diary_entries WHERE tripId = :eventId AND groupName IS NOT NULL")
+    fun getPagesForEvent(eventId: String): Flow<List<String>>
+
     @Query("SELECT * FROM diary_entries WHERE tripId IS NULL ORDER BY timestamp DESC")
     fun getUnassignedEntries(): Flow<List<DiaryEntry>>
 

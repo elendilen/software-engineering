@@ -11,10 +11,10 @@ class CaptionRepository(private val context: Context) {
         private const val FALLBACK_CAPTION = "请在此处编辑生成的文字"
     }
 
-    suspend fun generateCaptionForImages(imageUris: List<Uri>): String {
+    suspend fun generateCaptionForImages(imageUris: List<Uri>, prompt: String? = null): String {
         // 优先调用后端；若后端无响应或返回空白，则回退到占位文案
         return try {
-            val result = callBackendApi(imageUris).trim()
+            val result = callBackendApi(imageUris, prompt).trim()
             if (result.isBlank()) FALLBACK_CAPTION else result
         } catch (e: Exception) {
             FALLBACK_CAPTION
@@ -22,7 +22,7 @@ class CaptionRepository(private val context: Context) {
     }
 
     // 保留原始的API调用逻辑，以便后续恢复
-    private suspend fun callBackendApi(imageUris: List<Uri>): String {
+    private suspend fun callBackendApi(imageUris: List<Uri>, prompt: String?): String {
         try {
             val imageParts = imageUris.map { uri ->
                 // 将Uri转换为MultipartBody.Part
@@ -35,7 +35,11 @@ class CaptionRepository(private val context: Context) {
                 MultipartBody.Part.createFormData("images", "image.jpg", requestBody!!)
             }
 
-            val response = RetrofitClient.apiService.generateCaption(imageParts)
+            val promptRequestBody = prompt?.let { p ->
+                p.toRequestBody("text/plain".toMediaTypeOrNull())
+            }
+
+            val response = RetrofitClient.apiService.generateCaption(imageParts, promptRequestBody)
             val caption = response.caption?.trim() ?: ""
             return if (caption.isBlank()) FALLBACK_CAPTION else caption
         } catch (e: Exception) {

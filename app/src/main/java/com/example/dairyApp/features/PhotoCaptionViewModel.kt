@@ -34,12 +34,21 @@ data class PhotoCaptionUiState(
     val saveMessage: String? = null,
     val availableEvents: List<DiaryEvent> = emptyList(), // Changed to DiaryEvent
     val selectedEventId: String? = null
+    ,
+    val userPrompt: String = "" // user-provided prompt to influence generation
+    ,
+    // Distinct existing diary page names for the selected event (used to provide suggestions)
+    val availablePages: List<String> = emptyList()
+    ,
+    // When editing, prefill this with the existing entry's diary page name
+    val selectedDiaryPageName: String? = null
 )
 
 class PhotoCaptionViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
     private val initialEventId: String?,
+    private val initialDiaryPageName: String?,
     private val entryIdToEdit: String?
 ) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(PhotoCaptionUiState())
@@ -70,6 +79,13 @@ class PhotoCaptionViewModel(
         }
         if (initialEventId != null && _uiState.value.selectedEventId == null) {
             _uiState.update { it.copy(selectedEventId = initialEventId) }
+            // load pages for initial event if provided
+            loadPagesForEvent(initialEventId)
+        }
+
+        // If a diary page name was provided when opening the screen (navigated from a page), prefill it
+        if (initialDiaryPageName != null && _uiState.value.selectedDiaryPageName == null) {
+            _uiState.update { it.copy(selectedDiaryPageName = initialDiaryPageName) }
         }
 
         // 如果是编辑模式，加载已有条目内容
@@ -82,9 +98,29 @@ class PhotoCaptionViewModel(
                             selectedPhotoUris = e.imageUris.map { s -> Uri.parse(s) },
                             generatedCaption = e.caption,
                             selectedEventId = e.eventId ?: it.selectedEventId
+                            , selectedDiaryPageName = e.diaryPageName
                         )
                     }
+                    // ensure pages for that event are loaded so UI can suggest and prefill
+                    loadPagesForEvent(e.eventId)
                 }
+            }
+        }
+    }
+
+    private fun loadPagesForEvent(eventId: String?) {
+        viewModelScope.launch {
+            if (!eventId.isNullOrBlank()) {
+                diaryRepository.getPagesForEvent(eventId)
+                    .stateIn(
+                        scope = viewModelScope,
+                        started = SharingStarted.WhileSubscribed(5000L),
+                        initialValue = emptyList()
+                    ).collect { pages ->
+                        _uiState.update { it.copy(availablePages = pages) }
+                    }
+            } else {
+                _uiState.update { it.copy(availablePages = emptyList()) }
             }
         }
     }
@@ -113,12 +149,16 @@ class PhotoCaptionViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, saveMessage = null) }
             try {
-                val caption = captionRepository.generateCaptionForImages(_uiState.value.selectedPhotoUris)
+                val caption = captionRepository.generateCaptionForImages(_uiState.value.selectedPhotoUris, _uiState.value.userPrompt)
                 _uiState.update { it.copy(generatedCaption = caption, isLoading = false) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message, isLoading = false) }
             }
         }
+    }
+
+    fun onUserPromptChanged(newPrompt: String) {
+        _uiState.update { it.copy(userPrompt = newPrompt) }
     }
 
     fun onCaptionChanged(newCaption: String) {
@@ -127,12 +167,20 @@ class PhotoCaptionViewModel(
 
     fun onEventSelected(eventId: String?) {
         _uiState.update { it.copy(selectedEventId = eventId) }
+        // load pages for this event so UI can suggest existing page names
+        loadPagesForEvent(eventId)
     }
 
     fun saveDiaryEntry(diaryPageName: String?, eventId: String?) {
         val currentState = _uiState.value
         if (currentState.selectedPhotoUris.isEmpty() || currentState.generatedCaption.isBlank()) {
             _uiState.update { it.copy(saveMessage = "没有图片或文案来保存。") }
+            return
+        }
+
+        // diary page name is now required
+        if (diaryPageName.isNullOrBlank()) {
+            _uiState.update { it.copy(saveMessage = "请填写日记页名称。") }
             return
         }
 
@@ -191,6 +239,7 @@ class PhotoCaptionViewModel(
             application: Application,
             owner: SavedStateRegistryOwner,
             initialEventId: String?,
+            initialDiaryPageName: String?,
             entryIdToEdit: String?
         ): ViewModelProvider.Factory {
             val defaultArgs = Bundle()
@@ -202,6 +251,7 @@ class PhotoCaptionViewModel(
                             application = application,
                             savedStateHandle = handle,
                             initialEventId = initialEventId,
+                            initialDiaryPageName = initialDiaryPageName,
                             entryIdToEdit = entryIdToEdit
                         ) as T
                     }

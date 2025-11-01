@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -41,6 +42,8 @@ fun DiaryEntryListScreen(
     navBackStackEntry: NavBackStackEntry
 ) {
     val viewModel: DiaryEntryListViewModel = viewModel(
+        modelClass = DiaryEntryListViewModel::class.java,
+        viewModelStoreOwner = navBackStackEntry,
         factory = DiaryEntryListViewModel.provideFactory(
             application = LocalContext.current.applicationContext as Application,
             owner = navBackStackEntry,
@@ -62,6 +65,20 @@ fun DiaryEntryListScreen(
                     }
                 }
             )
+        }
+        ,
+        floatingActionButton = {
+            FloatingActionButton(onClick = {
+                // Create a new entry directly inside this diary page
+                navController.navigate(
+                    com.example.dairyApp.Screen.PhotoCaption.createRoute(
+                        eventId = eventId,
+                        diaryPageName = diaryPageName
+                    )
+                )
+            }) {
+                Icon(Icons.Filled.Add, contentDescription = "添加新的日记条目")
+            }
         }
     ) { paddingValues ->
         Box(
@@ -86,6 +103,7 @@ fun DiaryEntryListScreen(
                                 navController.navigate(
                                     com.example.dairyApp.Screen.PhotoCaption.createRoute(
                                         eventId = eventId,
+                                        diaryPageName = diaryPageName,
                                         entryId = entry.id
                                     )
                                 )

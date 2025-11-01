@@ -2,7 +2,9 @@ package com.example.dairyApp.features
 
 import android.app.Application
 import android.net.Uri
+import androidx.navigation.NavBackStackEntry
 import androidx.activity.compose.rememberLauncherForActivityResult
+import android.content.Intent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -27,24 +29,42 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.dairyApp.diary.DiaryEvent // Updated import
 import kotlinx.coroutines.launch
+import com.example.dairyApp.utils.ShareUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhotoCaptionScreen(
-    navController: NavController, 
+    navController: NavController,
     initialEventId: String?,
+    initialDiaryPageName: String? = null,
     entryIdToEdit: String? = null,
-    viewModel: PhotoCaptionViewModel = viewModel(
+    navBackStackEntry: NavBackStackEntry
+) {
+    // Scope the ViewModel to the NavBackStackEntry so each navigation destination gets its own savedState
+    val viewModel: PhotoCaptionViewModel = viewModel(
+        modelClass = PhotoCaptionViewModel::class.java,
+        viewModelStoreOwner = navBackStackEntry,
         factory = PhotoCaptionViewModel.provideFactory(
             application = LocalContext.current.applicationContext as Application,
-            owner = LocalContext.current as androidx.savedstate.SavedStateRegistryOwner,
+            owner = navBackStackEntry,
             initialEventId = initialEventId,
+            initialDiaryPageName = initialDiaryPageName,
             entryIdToEdit = entryIdToEdit
         )
     )
-) {
+
     val uiState by viewModel.uiState.collectAsState()
-    var diaryPageName by remember { mutableStateOf("") } 
+    // Prefill diaryPageName from viewModel when editing an existing entry
+    var diaryPageName by remember { mutableStateOf(uiState.selectedDiaryPageName ?: initialDiaryPageName ?: "") }
+    LaunchedEffect(uiState.selectedDiaryPageName, initialDiaryPageName) {
+        diaryPageName = uiState.selectedDiaryPageName ?: initialDiaryPageName ?: diaryPageName
+    }
+
+    // Ensure availablePages are loaded when an event is preselected by the ViewModel
+    LaunchedEffect(uiState.selectedEventId) {
+        // call VM handler to (re)load pages for the selected event; safe if null
+        viewModel.onEventSelected(uiState.selectedEventId)
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -145,6 +165,19 @@ fun PhotoCaptionScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
+            // 用户自定义提示（可选），会传给后端影响生成结果
+            OutlinedTextField(
+                value = uiState.userPrompt,
+                onValueChange = { viewModel.onUserPromptChanged(it) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("自定义提示（可选）") },
+                placeholder = { Text("例如：温柔、诗意、简洁短句...") },
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             if (uiState.isLoading && uiState.generatedCaption.isBlank()) {
                 CircularProgressIndicator()
             } else {
@@ -170,70 +203,48 @@ fun PhotoCaptionScreen(
             Spacer(modifier = Modifier.height(16.dp))
             
             if (uiState.selectedPhotoUris.isNotEmpty() && uiState.generatedCaption.isNotBlank()) {
-                OutlinedTextField(
-                    value = diaryPageName,
-                    onValueChange = { diaryPageName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("日记页名称 (可选)") }, 
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                ExposedDropdownMenuBox(
-                    expanded = isEventDropdownExpanded,
-                    onExpandedChange = { isEventDropdownExpanded = !isEventDropdownExpanded },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val selectedEventName = uiState.availableEvents.find { it.id == uiState.selectedEventId }?.name
-                    OutlinedTextField(
-                        value = selectedEventName ?: "选择一个事件 (可选)", 
-                        onValueChange = {}, 
-                        readOnly = true,
-                        label = { Text("归属于事件") }, 
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isEventDropdownExpanded)
-                        },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = isEventDropdownExpanded,
-                        onDismissRequest = { isEventDropdownExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("不指定事件") }, 
-                            onClick = {
-                                viewModel.onEventSelected(null) 
-                                isEventDropdownExpanded = false
-                            }
-                        )
-                        uiState.availableEvents.forEach { event: DiaryEvent -> // Explicit type here for clarity
-                            DropdownMenuItem(
-                                text = { Text(event.name) },
-                                onClick = {
-                                    viewModel.onEventSelected(event.id) 
-                                    isEventDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
+                // 在此页面不显示“日记页/事件”选择控件（由上层页面管理），仅显示保存按钮。
+                // 如果没有可用的 diaryPageName（即不是从页内进入），提示用户从日记页进入添加。
+                Spacer(modifier = Modifier.height(8.dp))
+                if (diaryPageName.isBlank()) {
+                    Text(text = "未指定日记页：请从日记页入口进入以添加条目。", color = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = { 
-                        viewModel.saveDiaryEntry(
-                            diaryPageName = diaryPageName.ifBlank { null },
-                            eventId = uiState.selectedEventId 
-                        ) 
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isLoading
-                ) {
-                    Text("保存到图片日记")
+                val context = LocalContext.current
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = {
+                            viewModel.saveDiaryEntry(
+                                diaryPageName = diaryPageName.ifBlank { null },
+                                eventId = uiState.selectedEventId
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !uiState.isLoading && diaryPageName.isNotBlank()
+                    ) {
+                        Text("保存到图片日记")
+                    }
+
+                    Button(
+                        onClick = {
+                            val uris = uiState.selectedPhotoUris
+                            try {
+                                ShareUtils.shareImagesWithCaption(context, uris, uiState.generatedCaption)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("文案已复制到剪贴板，若目标应用未显示请长按粘贴")
+                                }
+                            } catch (e: Exception) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("分享失败：${e.message}")
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !uiState.isLoading && diaryPageName.isNotBlank() && uiState.selectedPhotoUris.isNotEmpty() && uiState.generatedCaption.isNotBlank()
+                    ) {
+                        Text("分享")
+                    }
                 }
             }
 

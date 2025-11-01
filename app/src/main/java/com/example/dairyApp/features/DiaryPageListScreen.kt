@@ -15,6 +15,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -58,8 +61,34 @@ fun DiaryPageListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { navController.navigate(Screen.PhotoCaption.createRoute(eventId)) }) {
-                Icon(Icons.Filled.Add, contentDescription = "添加新的日记条目")
+            var showCreatePageDialog by remember { mutableStateOf(false) }
+            if (showCreatePageDialog) {
+                var newPageName by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { showCreatePageDialog = false },
+                    title = { Text("新建日记页") },
+                    text = {
+                        OutlinedTextField(
+                            value = newPageName,
+                            onValueChange = { newPageName = it },
+                            label = { Text("日记页名称") },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showCreatePageDialog = false
+                            if (newPageName.isNotBlank()) {
+                                navController.navigate(Screen.DiaryEntryList.createRoute(eventId, newPageName))
+                            }
+                        }) { Text("创建") }
+                    },
+                    dismissButton = { TextButton(onClick = { showCreatePageDialog = false }) { Text("取消") } }
+                )
+            }
+
+            FloatingActionButton(onClick = { showCreatePageDialog = true }) {
+                Icon(Icons.Filled.Add, contentDescription = "创建日记页并进入")
             }
         }
     ) { paddingValues ->
