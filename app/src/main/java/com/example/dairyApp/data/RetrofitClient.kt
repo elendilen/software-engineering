@@ -5,7 +5,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
     private val retrofit = Retrofit.Builder()
-        .baseUrl("https://your.api.base.url/") // 换成你的API基础URL
+        .baseUrl("http://10.21.207.162:8000/") // 换成你的API基础URL
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 

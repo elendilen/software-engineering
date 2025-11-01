@@ -1,15 +1,19 @@
 package com.example.dairyApp
 
 sealed class Screen(val route: String) {
-    object PhotoCaption : Screen("photo_caption?eventId={eventId}") {
-        fun createRoute(eventId: String? = null): String {
-            return if (eventId != null) {
-                "photo_caption?eventId=$eventId"
-            } else {
+    object PhotoCaption : Screen("photo_caption?eventId={eventId}&entryId={entryId}") {
+        fun createRoute(eventId: String? = null, entryId: String? = null): String {
+            val parts = mutableListOf<String>()
+            eventId?.let { parts.add("eventId=$it") }
+            entryId?.let { parts.add("entryId=$it") }
+            return if (parts.isEmpty()) {
                 "photo_caption"
+            } else {
+                "photo_caption?" + parts.joinToString("&")
             }
         }
-        const val eventIdArg = "eventId" // Renamed from supergroupIdArg
+        const val eventIdArg = "eventId" // optional
+        const val entryIdArg = "entryId" // optional, for editing existing entry
     }
 
     object DiaryHome : Screen("diary_home") // Consider if this is still needed

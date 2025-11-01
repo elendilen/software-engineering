@@ -115,13 +115,20 @@ fun AppNavigation() {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
+                },
+                navArgument(Screen.PhotoCaption.entryIdArg) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 }
             )
         ) { backStackEntry ->
             val eventId = backStackEntry.arguments?.getString(Screen.PhotoCaption.eventIdArg)
+            val entryId = backStackEntry.arguments?.getString(Screen.PhotoCaption.entryIdArg)
             PhotoCaptionScreen(
                 navController = navController,
-                initialEventId = eventId
+                initialEventId = eventId,
+                entryIdToEdit = entryId
             )
         }
     }

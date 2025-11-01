@@ -32,12 +32,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun PhotoCaptionScreen(
     navController: NavController, 
-    initialEventId: String?,      
+    initialEventId: String?,
+    entryIdToEdit: String? = null,
     viewModel: PhotoCaptionViewModel = viewModel(
         factory = PhotoCaptionViewModel.provideFactory(
             application = LocalContext.current.applicationContext as Application,
             owner = LocalContext.current as androidx.savedstate.SavedStateRegistryOwner,
-            initialEventId = initialEventId
+            initialEventId = initialEventId,
+            entryIdToEdit = entryIdToEdit
         )
     )
 ) {
@@ -89,26 +91,57 @@ fun PhotoCaptionScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (uiState.selectedPhotoUris.isNotEmpty()) {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 100.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (uiState.selectedPhotoUris.size <= 3) 120.dp else 230.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(uiState.selectedPhotoUris) { uri ->
-                        AsyncImage(
-                            model = uri,
-                            contentDescription = "Selected image for preview",
+                // Show up to 9 images in a responsive grid similar to Moments.
+                // Layout rules:
+                // - 1 image: big full-width preview
+                // - 4 images: 2 columns (2x2)
+                // - otherwise: 3 columns
+                val maxImages = minOf(uiState.selectedPhotoUris.size, 9)
+                val displayImages = uiState.selectedPhotoUris.take(maxImages)
+
+                if (displayImages.size == 1) {
+                    AsyncImage(
+                        model = displayImages.first(),
+                        contentDescription = "Selected image",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    val columns = if (displayImages.size == 4) 2 else 3
+                    val rows = (displayImages.size + columns - 1) / columns
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        // Use Float multipliers to avoid ambiguous overloads with Int * Dp
+                        val totalSpacing = 8.dp * (columns - 1).toFloat()
+                        val itemSize = (maxWidth - totalSpacing) / columns.toFloat()
+                        val gridHeight = itemSize * rows.toFloat() + 8.dp * (rows - 1).toFloat()
+
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(columns),
                             modifier = Modifier
-                                .size(100.dp)
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(12.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+                                .fillMaxWidth()
+                                .height(gridHeight),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            userScrollEnabled = false,
+                            contentPadding = PaddingValues(4.dp)
+                        ) {
+                            items(displayImages) { uri ->
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Selected image for preview",
+                                    modifier = Modifier
+                                        .size(itemSize)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
                     }
                 }
+
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
@@ -229,30 +262,43 @@ fun FormattedOutputCard(images: List<Uri>, caption: String) {
             modifier = Modifier.padding(all = 20.dp) 
         ) {
             if (images.isNotEmpty()) {
-                if (images.size == 1) {
+                val maxImages = minOf(images.size, 9)
+                val displayImages = images.take(maxImages)
+                if (displayImages.size == 1) {
                     AsyncImage(
-                        model = images.first(),
+                        model = displayImages.first(),
                         contentDescription = "Formatted output image",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(16f / 9f) 
+                            .aspectRatio(16f / 9f)
                             .clip(RoundedCornerShape(12.dp)),
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(vertical = 8.dp) 
+                    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(
+                                when (displayImages.size) {
+                                    in 1..3 -> 120.dp
+                                    in 4..6 -> 240.dp
+                                    else -> 360.dp
+                                }
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        userScrollEnabled = false,
+                        contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        items(images) { uri ->
+                        items(displayImages.size) { idx ->
+                            val uri = displayImages[idx]
                             AsyncImage(
                                 model = uri,
                                 contentDescription = "Formatted output image",
                                 modifier = Modifier
-                                    .height(180.dp)
                                     .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(12.dp)), 
+                                    .clip(RoundedCornerShape(10.dp)),
                                 contentScale = ContentScale.Crop
                             )
                         }

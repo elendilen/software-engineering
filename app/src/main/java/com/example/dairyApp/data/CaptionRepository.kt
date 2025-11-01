@@ -7,13 +7,18 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class CaptionRepository(private val context: Context) {
+    companion object {
+        private const val FALLBACK_CAPTION = "请在此处编辑生成的文字"
+    }
 
     suspend fun generateCaptionForImages(imageUris: List<Uri>): String {
-        // 后端可用时，使用以下真实API调用
-        // return callBackendApi(imageUris)
-
-        // 后端不可用时的临时方案：返回一个默认的可编辑标题
-        return "请在此处编辑生成的文字"
+        // 优先调用后端；若后端无响应或返回空白，则回退到占位文案
+        return try {
+            val result = callBackendApi(imageUris).trim()
+            if (result.isBlank()) FALLBACK_CAPTION else result
+        } catch (e: Exception) {
+            FALLBACK_CAPTION
+        }
     }
 
     // 保留原始的API调用逻辑，以便后续恢复
@@ -31,12 +36,13 @@ class CaptionRepository(private val context: Context) {
             }
 
             val response = RetrofitClient.apiService.generateCaption(imageParts)
-            return response.caption
+            val caption = response.caption?.trim() ?: ""
+            return if (caption.isBlank()) FALLBACK_CAPTION else caption
         } catch (e: Exception) {
             // 处理网络或其他API调用错误
             e.printStackTrace() // 建议使用更完善的日志记录
-            // API调用失败时，也可以返回默认标题或抛出自定义异常
-            return "API调用失败，请手动编辑"
+            // API 调用失败时，返回占位文案作为兜底
+            return FALLBACK_CAPTION
         }
     }
 }
