@@ -11,9 +11,9 @@ Env vars:
 Notes:
 - This service adapts the logic from 1.py to handle uploaded images directly.
 """
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
-from typing import List
+from typing import List, Optional
 import os
 import base64
 import json
@@ -44,24 +44,6 @@ def clean_text(text: str) -> str:
     text = re.sub(r'^\s*[-•]\s*', '', text, flags=re.MULTILINE)
     text = re.sub(r'^\s*\d+\.\s*', '', text, flags=re.MULTILINE)
 
-    # Section tweaks
-    text = re.sub(r'景物描述', '在景物方面，', text)
-    text = re.sub(r'环境描述', '从环境来看，', text)
-    text = re.sub(r'氛围描述', '整体氛围上，', text)
-
-    # Item tweaks
-    text = re.sub(r'树木：', '画面中的树木', text)
-    text = re.sub(r'树叶：', '而树叶', text)
-    text = re.sub(r'地面：', '地面', text)
-    text = re.sub(r'光影：', '光影效果', text)
-    text = re.sub(r'位置：', '这里', text)
-    text = re.sub(r'植被：', '植被方面，', text)
-    text = re.sub(r'空气：', '空气', text)
-    text = re.sub(r'季节：', '从季节来判断，', text)
-    text = re.sub(r'宁静：', '宁静方面，', text)
-    text = re.sub(r'生机：', '生机勃勃的是，', text)
-    text = re.sub(r'神秘：', '神秘感在于', text)
-    text = re.sub(r'治愈：', '治愈感来源于', text)
 
     # Trim whitespace and excessive newlines
     text = re.sub(r'\n\s*\n', '\n\n', text)
@@ -108,7 +90,7 @@ async def files_to_b64_list(files: List[UploadFile]) -> List[str]:
     return b64_list
 
 
-def ask_qwen_about_multiple_images_b64(b64_list: List[str], question: str, *, timeout: int = 120) -> str:
+def ask_qwen_about_multiple_images_b64(b64_list: List[str], question: str, system_prompt: Optional[str] = None, *, timeout: int = 120) -> str:
     api_key = "sk-6d57d8b276f748b3bc8a413a81ca680b"
     api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     headers = {
@@ -116,27 +98,33 @@ def ask_qwen_about_multiple_images_b64(b64_list: List[str], question: str, *, ti
         "Authorization": f"Bearer {api_key}",
     }
 
-    # Build content list: images + question text
+    # Build content list: images + question text (as user content)
     content_list: List[dict] = []
     for b64 in b64_list:
         content_list.append({"image": f"data:image/jpeg;base64,{b64}"})
     content_list.append({"text": question})
+    # If the caller provided a prompt, place it explicitly into a system-level message
+    # so the model treats it as high priority instructions. This avoids fragile
+    # heuristics that try to parse prompt out of a single question string.
+    system_messages: List[dict] = []
+    if system_prompt and system_prompt.strip():
+        system_text = system_prompt.strip()
+        # If prompt requests English (either Chinese '英文' or English words), append a clear English-only instruction
+        if ('english' in system_text.lower() or 'use english' in system_text.lower() or '英文' in system_text):
+            print("usr requires English")
+            if 'please respond in english' not in system_text.lower():
+                system_text = system_text + ' Please respond in English.'
+        system_messages.append({"role": "system", "content": [{"text": system_text}]})
+
+    # Build the messages list: system messages first, then the user content containing images + instruction
+    messages = []
+    messages.extend(system_messages)
+    messages.append({"role": "user", "content": content_list})
 
     payload = {
         "model": "qwen-vl-plus",
-        "input": {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": content_list,
-                }
-            ]
-        },
-        "parameters": {
-            # 结果要求 < 50 字，限制较小的 max_tokens 可显著缩短生成时长
-            "max_tokens": 200,
-            "temperature": 0.2,
-        },
+        "input": {"messages": messages},
+        "parameters": {"max_tokens": 200, "temperature": 0.2},
     }
 
     try:
@@ -172,7 +160,7 @@ async def health():
 
 
 @app.post("/v1/generate-caption")
-async def generate_caption(images: List[UploadFile] = File(...)):
+async def generate_caption(images: List[UploadFile] = File(...), prompt: str | None = Form(None)):
     # Basic constraints
     if not images:
         raise HTTPException(status_code=400, detail="No images uploaded")
@@ -180,15 +168,33 @@ async def generate_caption(images: List[UploadFile] = File(...)):
         raise HTTPException(status_code=400, detail="Too many images (max 9)")
 
     b64_list = await files_to_b64_list(images)
-
-    question = (
-        "将这些图片的内容合并为一段不超过50字的朋友圈文案："
-        "语言自然流畅，使用短句与意象，避免列举与口号；"
+    # Base instruction
+    base_instruction = (
+        "以上的要求具有最高的优先级，如果一下要求和上述要求相矛盾，请忽略下面的要求"
+        "语言自然流畅，如果以上的要求是开心的可以使用表情包，对于伤感的要求，不要使用表情包，请语言简洁，并有诗意；"
+        "根据这些图片的内容，生成一段不长于50字的朋友圈文案："
         "删除重复并修正错字/断词；"
         "只输出正文，不要标题、序号、标签或解释。"
     )
 
-    raw = ask_qwen_about_multiple_images_b64(b64_list, question)
+    # Build a clear system-level instruction that contains the base rules plus any client prompt.
+    # Put the base instruction into the system role (higher priority). The user message will be
+    # a short, language-neutral request so we don't accidentally override system-level language
+    # constraints by embedding the base instruction inside the user content.
+    if prompt and prompt.strip():
+        system_combined = f"{prompt.strip()}。{base_instruction}"
+    else:
+        system_combined = base_instruction
+
+    # If the client explicitly requests English, ensure an unmistakable system-level directive.
+    if prompt and ("english" in prompt.lower() or "use english" in prompt.lower() or "英文" in prompt):
+        if 'please respond in english' not in system_combined.lower():
+            system_combined = system_combined + ' Please respond in English.'
+
+    # Short, neutral user instruction — images are provided in the message content by the caller.
+    user_question = "Please follow the system instructions and generate the requested short caption based on the images."
+
+    raw = ask_qwen_about_multiple_images_b64(b64_list, user_question, system_prompt=system_combined)
     if not raw:
         raise HTTPException(status_code=502, detail="Empty response from upstream")
     caption = clean_text(raw)
